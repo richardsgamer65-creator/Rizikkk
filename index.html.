@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rizik">
+<title>Rizik</title>
+<style>
+:root{--bg:#ffffff;--surface:#f2f2f7;--text:#111114;--muted:#6b6b72;--accent:#2f6bff;--on-accent:#ffffff;--border:#dcdce2;--rec:#e5484d;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e0e11;--surface:#1c1c21;--text:#f2f2f5;--muted:#9a9aa3;--accent:#4d82ff;--border:#2c2c33}}
+:root[data-theme="dark"]{--bg:#0e0e11;--surface:#1c1c21;--text:#f2f2f5;--muted:#9a9aa3;--accent:#4d82ff;--border:#2c2c33}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:16px/1.45 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+#app{position:relative;display:flex;flex-direction:column;height:100%}
+header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px 8px 16px;border-bottom:1px solid var(--border)}
+header h1{font-size:20px;margin:0;letter-spacing:.3px}
+.hg{display:flex;align-items:center}
+.hb{background:none;border:0;font-size:20px;padding:6px 8px;color:var(--text)}
+.hb.txt{font-size:15px;color:var(--accent)}
+#setup{padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface)}
+#setup.done{display:none}
+#status{margin:0 0 10px;font-size:14px;color:var(--muted)}
+#status.err{color:var(--rec)}
+#start{width:100%;padding:12px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);font:inherit;font-weight:600}
+#start:disabled{opacity:.5}
+.alt{width:100%;margin-top:8px;padding:10px;border:1px solid var(--border);border-radius:12px;background:none;color:var(--accent);font:inherit}
+.small{font-size:13px;color:var(--muted);margin:8px 0 0}
+progress{width:100%;height:8px;margin-top:10px;display:none}
+#log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:85%;padding:10px 13px;border-radius:18px;overflow-wrap:anywhere}
+.msg span{white-space:pre-wrap}
+.user{align-self:flex-end;background:var(--accent);color:var(--on-accent)}
+.ai{align-self:flex-start;background:var(--surface)}
+.acts{display:flex;gap:14px;margin-top:6px}
+.acts button{background:none;border:0;padding:2px 0;color:var(--muted);font-size:13px}
+.hint{margin:auto;color:var(--muted);text-align:center;padding:24px}
+#bar{display:flex;gap:8px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--border)}
+#box{flex:1;min-width:0;resize:none;max-height:120px;font:inherit;color:var(--text);background:var(--surface);border:0;border-radius:18px;padding:9px 14px;outline:none}
+.icon{width:38px;height:38px;flex:none;border:0;border-radius:50%;background:var(--surface);color:var(--text);font-size:18px;padding:0}
+.icon.rec{background:var(--rec);color:#ffffff}
+#send{background:var(--accent);color:var(--on-accent);font-size:20px}
+#send:disabled{opacity:.4}
+#toast{position:absolute;left:50%;transform:translateX(-50%);bottom:80px;max-width:85%;text-align:center;background:var(--text);color:var(--bg);padding:8px 14px;border-radius:14px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Rizik</h1>
+    <div class="hg">
+      <button class="hb" id="vbtn" aria-label="Modo voz" aria-pressed="false">🔇</button>
+      <button class="hb" id="shareAll" aria-label="Compartilhar conversa">⤴</button>
+      <button class="hb txt" id="clear">Limpar</button>
+    </div>
+  </header>
+  <div id="setup">
+    <p id="status">A IA roda dentro do seu iPhone, sem enviar nada para servidores. No primeiro uso ela baixa o modelo (cerca de 563 MB). Use o Wi-Fi.</p>
+    <button id="start">Baixar e iniciar a IA</button>
+    <button class="alt" id="pick">Já baixei o modelo: escolher arquivo</button>
+    <input type="file" id="mfile" hidden>
+    <p class="small">Se o download direto falhar, baixe <a href="https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf?download=true" target="_blank" rel="noopener">Qwen3.5-0.8B-Q4_0.gguf</a> pelo Safari e escolha o arquivo acima.</p>
+    <progress id="prog" max="100" value="0"></progress>
+  </div>
+  <div id="log"></div>
+  <div id="bar">
+    <textarea id="box" rows="1" placeholder="Mensagem"></textarea>
+    <button class="icon" id="mic" aria-label="Falar">🎤</button>
+    <button class="icon" id="send" aria-label="Enviar" disabled>↑</button>
+  </div>
+  <div id="toast"></div>
+</div>
+<script type="module">
+/* ====== Configuração ======
+   Modelo: https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF
+   Para travar a versão da biblioteca, troque "3" por um número exato (ex.: "3.1.0"). */
+const WLLAMA_VERSION = "3";
+const REPO = "ggml-org/Qwen3.5-0.8B-GGUF";
+const FILE = "Qwen3.5-0.8B-Q4_0.gguf";
+const SYS = "Você é o Rizik, um assistente prestativo. Responda em português do Brasil, de forma clara e concisa, em texto simples, sem markdown.";
+const BASE = "https://cdn.jsdelivr.net/npm/@wllama/wllama@" + WLLAMA_VERSION + "/esm/";
+const HF_URL = "https://huggingface.co/" + REPO + "/resolve/main/" + FILE;
+
+const $ = id => document.getElementById(id);
+const log = $("log"), box = $("box"), send = $("send"), mic = $("mic"), vbtn = $("vbtn"),
+      statusEl = $("status"), startBtn = $("start"), prog = $("prog"), toastEl = $("toast");
+let msgs = [], wllama = null, ready = false, loading = false, busy = false, tick = null;
+let voiceMode = false, listening = false, fromMic = false, base = "", rec = null, unlocked = false;
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+try { msgs = JSON.parse(localStorage.getItem("chat") || "[]"); } catch (e) { msgs = []; }
+const save = () => { try { localStorage.setItem("chat", JSON.stringify(msgs.slice(-40))); } catch (e) {} };
+let tt;
+function toast(t) { toastEl.textContent = t; toastEl.classList.add("on"); clearTimeout(tt); tt = setTimeout(() => toastEl.classList.remove("on"), 2600); }
+const clean = t => t.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*$/, "").replace(/<\|im_end\|>/g, "").trim();
+const mb = n => Math.round((n || 0) / 1048576);
+async function reach(url) {
+  const c = new AbortController();
+  try { await fetch(url, { signal: c.signal, cache: "no-store" }); c.abort(); return true; }
+  catch (e) { return false; }
+}
+
+/* ---------- compartilhar e voz de saída ---------- */
+async function share(text) {
+  try { if (navigator.share) { await navigator.share({ title: "Rizik", text }); return; } }
+  catch (e) { if (e && e.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(text); toast("Copiado! Cole onde quiser."); }
+  catch (e) { toast("Não foi possível compartilhar."); }
+}
+function unlock() {
+  try { if (window.speechSynthesis && !unlocked) { speechSynthesis.speak(new SpeechSynthesisUtterance("")); unlocked = true; } } catch (e) {}
+}
+function speak(t) {
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = "pt-BR"; speechSynthesis.speak(u); } catch (e) {}
+}
+
+/* ---------- mensagens ---------- */
+function acts(bubble, span) {
+  const a = document.createElement("div"); a.className = "acts";
+  [["🔊 Ouvir", () => { unlock(); speak(span.textContent); }], ["⤴ Compartilhar", () => share(span.textContent)]].forEach(([l, f]) => {
+    const b = document.createElement("button"); b.textContent = l; b.onclick = f; a.appendChild(b);
+  });
+  bubble.appendChild(a);
+}
+function add(role, text, withActs) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : "ai");
+  const s = document.createElement("span"); s.textContent = text; d.appendChild(s);
+  if (withActs) acts(d, s);
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
+  return s;
+}
+function render() {
+  log.textContent = "";
+  if (!msgs.length) {
+    const h = document.createElement("div"); h.className = "hint";
+    h.textContent = "Oi, eu sou o Rizik. Pergunte qualquer coisa ou toque no 🎤 para falar.";
+    log.appendChild(h);
+  } else msgs.forEach(m => add(m.role, m.content, m.role !== "user"));
+}
+const grow = () => { box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, 120) + "px"; };
+
+/* ---------- carregar o modelo ---------- */
+async function startAI(localFile) {
+  if (loading || ready) return;
+  loading = true; startBtn.disabled = true; prog.style.display = "block";
+  statusEl.className = ""; statusEl.textContent = "Carregando a biblioteca…";
+  let stage = "biblioteca";
+  try {
+    const mod = await import(BASE + "index.js");
+    const wasm = await import(BASE + "wasm-from-cdn.js");
+    wllama = new mod.Wllama(wasm.default, { logger: {
+      debug() {}, log() {},
+      warn: (...a) => console.warn(...a),
+      error: (...a) => { console.error(...a); fatal(a.map(x => (x && (x.message || x.type)) || String(x)).join(" ")); }
+    } });
+    stage = "modelo";
+    const progressCallback = ({ loaded, total }) => {
+      const p = total ? Math.round(loaded / total * 100) : 0;
+      prog.value = p;
+      statusEl.textContent = "Baixando o modelo… " + p + "% (" + mb(loaded) + " de " + mb(total) + " MB)";
+    };
+    const load = extra => localFile
+      ? wllama.loadModel([localFile], extra)
+      : wllama.loadModelFromHF({ repo: REPO, file: FILE }, { progressCallback, ...extra });
+    if (localFile) {
+      prog.removeAttribute("value");
+      const t0 = Date.now();
+      const upd = () => { const sec = Math.round((Date.now() - t0) / 1000); statusEl.textContent = "Carregando o modelo do arquivo… " + sec + " s (" + mb(localFile.size) + " MB)" + (sec > 90 ? ". Está demorando mais que o normal: o motor da IA pode ter falhado." : ""); };
+      upd(); tick = setInterval(upd, 1000);
+    }
+    try {
+      await load({ n_gpu_layers: 0 });
+    } catch (e) {
+      console.warn("Falhou só com a CPU, tentando com a GPU:", e);
+      statusEl.textContent = "Tentando de novo com a GPU…";
+      await load({});
+    }
+    clearInterval(tick); ready = true; send.disabled = false;
+    $("setup").classList.add("done");
+    toast("IA pronta!");
+  } catch (e) {
+    console.error(e);
+    clearInterval(tick);
+    loading = false; startBtn.disabled = false; prog.style.display = "none";
+    statusEl.className = "err";
+    const msg = (e && e.message) ? e.message : String(e);
+    if (stage === "biblioteca") {
+      statusEl.textContent = "Não consegui carregar a biblioteca da IA (" + msg + "). Hospede o arquivo (GitHub Pages, Netlify…) e abra o endereço https:// no Safari.";
+    } else if (/load failed|network|fetch/i.test(msg)) {
+      statusEl.textContent = "Verificando a conexão…";
+      const cdn = await reach(BASE + "index.js");
+      const hf = await reach(HF_URL);
+      statusEl.textContent = !cdn
+        ? "Este ambiente bloqueia downloads de outros sites, então a IA não carrega aqui. Hospede o arquivo (GitHub Pages, Netlify…) e abra o endereço https:// no Safari."
+        : !hf
+          ? "O download direto do Hugging Face está bloqueado aqui. Baixe o modelo pelo Safari (link abaixo) e toque em “Já baixei o modelo” para escolher o arquivo."
+          : "A conexão caiu durante o carregamento (" + msg + "). Confira o Wi-Fi e tente de novo.";
+    } else {
+      statusEl.textContent = "Não consegui carregar o modelo: " + msg + ". Se a mensagem falar em arquitetura ou modelo não suportado, a biblioteca ainda não conhece o Qwen3.5: troque WLLAMA_VERSION por uma versão mais nova.";
+    }
+  }
+}
+startBtn.addEventListener("click", () => startAI());
+$("pick").addEventListener("click", () => { if (!loading) $("mfile").click(); });
+$("mfile").addEventListener("change", () => { const f = $("mfile").files[0]; $("mfile").value = ""; if (f) startAI(f); });
+
+/* ---------- enviar ---------- */
+async function go() {
+  const t = box.value.trim();
+  if (!t || busy || !ready) return;
+  unlock();
+  busy = true; send.disabled = true;
+  box.value = ""; grow();
+  if (!msgs.length) log.textContent = "";
+  msgs.push({ role: "user", content: t });
+  add("user", t);
+  const el = add("assistant", "Pensando…");
+  const hist = [{ role: "system", content: SYS }, ...msgs.slice(-10).map(m => ({ role: m.role, content: m.content }))];
+  try {
+    let out = "";
+    const r = await wllama.createChatCompletion({ messages: hist, max_tokens: 768, temperature: 0.7, top_p: 0.9, top_k: 40, stream: true });
+    if (r && typeof r[Symbol.asyncIterator] === "function") {
+      for await (const ch of r) {
+        out += (ch.choices && ch.choices[0] && ch.choices[0].delta && ch.choices[0].delta.content) || "";
+        el.textContent = clean(out) || "Pensando…";
+        log.scrollTop = log.scrollHeight;
+      }
+    } else out = r.choices[0].message.content;
+    const final = clean(out) || "(sem resposta)";
+    el.textContent = final;
+    msgs.push({ role: "assistant", content: final }); save();
+    acts(el.parentNode, el);
+    if (voiceMode) speak(final);
+  } catch (e) {
+    console.error(e);
+    msgs.pop(); box.value = t; grow();
+    el.textContent = "Não consegui responder agora. Tente de novo.";
+  }
+  busy = false; send.disabled = false;
+}
+
+/* ---------- voz de entrada ---------- */
+function setRec(on) { listening = on; mic.classList.toggle("rec", on); mic.textContent = on ? "■" : "🎤"; }
+function micClick() {
+  unlock();
+  try { speechSynthesis.cancel(); } catch (e) {}
+  if (listening) { try { rec.stop(); } catch (e) {} return; }
+  if (!SR) { toast("Voz indisponível aqui. Use o microfone do teclado do iPhone."); return; }
+  base = box.value.trim() ? box.value.trim() + " " : ""; fromMic = true;
+  const r = new SR();
+  r.lang = "pt-BR"; r.interimResults = true; r.continuous = false;
+  r.onresult = e => { let s = ""; for (const x of e.results) s += x[0].transcript; box.value = base + s; grow(); };
+  r.onend = () => { setRec(false); if (fromMic) { fromMic = false; if (voiceMode && box.value.trim()) go(); } };
+  r.onerror = () => { setRec(false); fromMic = false; toast("Não consegui usar o microfone."); };
+  rec = r;
+  try { r.start(); setRec(true); } catch (e) { fromMic = false; }
+}
+mic.addEventListener("click", micClick);
+vbtn.addEventListener("click", () => {
+  unlock();
+  voiceMode = !voiceMode;
+  vbtn.textContent = voiceMode ? "🔊" : "🔇";
+  vbtn.setAttribute("aria-pressed", String(voiceMode));
+  if (!voiceMode) { try { speechSynthesis.cancel(); } catch (e) {} }
+  toast(voiceMode ? "Modo voz ligado: toque no 🎤, fale e eu respondo em voz alta." : "Modo voz desligado.");
+});
+
+send.addEventListener("click", go);
+box.addEventListener("input", grow);
+$("clear").addEventListener("click", () => {
+  if (busy) return;
+  msgs = []; save(); render();
+  try { speechSynthesis.cancel(); } catch (e) {}
+});
+$("shareAll").addEventListener("click", () => {
+  if (!msgs.length) { toast("Nada para compartilhar ainda."); return; }
+  share(msgs.map(m => (m.role === "user" ? "Você: " : "Rizik: ") + m.content).join("\n\n"));
+});
+function workerOK() {
+  return new Promise(res => {
+    try {
+      const u = URL.createObjectURL(new Blob(["postMessage(1)"], { type: "text/javascript" }));
+      const w = new Worker(u);
+      const t = setTimeout(() => { try { w.terminate(); } catch (e) {} res(false); }, 3000);
+      w.onmessage = () => { clearTimeout(t); w.terminate(); res(true); };
+      w.onerror = () => { clearTimeout(t); res(false); };
+    } catch (e) { res(false); }
+  });
+}
+const NO_WORKER = "Este ambiente bloqueia o motor da IA (Web Workers), então ela não roda aqui. Hospede o arquivo (GitHub Pages, Netlify…) e abra o endereço https:// no Safari.";
+async function fatal(detail) {
+  if (!loading || ready) return;
+  const ok = await workerOK();
+  clearInterval(tick);
+  loading = false; startBtn.disabled = false; prog.style.display = "none";
+  statusEl.className = "err";
+  statusEl.textContent = ok
+    ? "O motor da IA não conseguiu iniciar neste navegador" + (detail ? " (" + detail + ")" : "") + ". Pode ser incompatibilidade com o iPhone ou com esta pré-visualização. Tente o arquivo hospedado, aberto no Safari."
+    : NO_WORKER;
+}
+window.addEventListener("error", e => fatal(e.message || ""));
+window.addEventListener("unhandledrejection", e => fatal(e.reason && e.reason.message ? e.reason.message : ""));
+workerOK().then(ok => { if (!ok && !loading) { statusEl.className = "err"; statusEl.textContent = NO_WORKER; } });
+render();
+if (location.protocol === "file:" || location.protocol === "blob:") {
+  statusEl.className = "err";
+  statusEl.textContent = "Este arquivo foi aberto como pré-visualização local, e isso bloqueia o download da IA. Hospede o arquivo e abra o endereço https:// no Safari.";
+}
+</script>
+</body>
+</html>
